@@ -8,6 +8,7 @@ from fastapi import APIRouter, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 
 from utils.letter_generator import generate_letter
+from db import get_db
 
 router = APIRouter()
 
@@ -39,23 +40,16 @@ async def generate_letters(
 
     buf.seek(0)
 
-    # Log activity
-    import os
-    # We'll log via internal call — simpler to write directly
-    log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "activity_log.json")
-    entries = []
-    if os.path.exists(log_path):
-        with open(log_path, "r", encoding="utf-8") as f:
-            entries = json.load(f)
-    entries.insert(0, {
-        "action": "letters_generated",
-        "detail": f"{len(prospects)} lettres générées",
-        "detail_count": len(prospects),
-        "timestamp": datetime.now().isoformat(),
-    })
-    entries = entries[:50]
-    with open(log_path, "w", encoding="utf-8") as f:
-        json.dump(entries, f, ensure_ascii=False, indent=2)
+    # Log activity to Supabase
+    try:
+        db = get_db()
+        db.table("activity_log").insert({
+            "action": "letters_generated",
+            "detail": f"{len(prospects)} lettres générées",
+            "detail_count": len(prospects),
+        }).execute()
+    except Exception:
+        pass
 
     filename = f"lettres_guardx_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
     return StreamingResponse(

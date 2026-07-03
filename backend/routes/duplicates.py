@@ -8,6 +8,7 @@ from fastapi import APIRouter, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 
 from utils.fuzzy_matcher import match_score
+from db import get_db
 
 router = APIRouter()
 
@@ -65,21 +66,16 @@ async def check_duplicates(
         else:
             clean_rows.append(row_dict)
 
-    # Log activity
-    log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "activity_log.json")
-    entries = []
-    if os.path.exists(log_path):
-        with open(log_path, "r", encoding="utf-8") as f:
-            entries = json.load(f)
-    entries.insert(0, {
-        "action": "duplicates_checked",
-        "detail": f"{len(duplicate_rows)} doublons trouvés sur {len(pros_df)}",
-        "detail_count": len(duplicate_rows),
-        "timestamp": datetime.now().isoformat(),
-    })
-    entries = entries[:50]
-    with open(log_path, "w", encoding="utf-8") as f:
-        json.dump(entries, f, ensure_ascii=False, indent=2)
+    # Log activity to Supabase
+    try:
+        db = get_db()
+        db.table("activity_log").insert({
+            "action": "duplicates_checked",
+            "detail": f"{len(duplicate_rows)} doublons trouvés sur {len(pros_df)}",
+            "detail_count": len(duplicate_rows),
+        }).execute()
+    except Exception:
+        pass
 
     return {
         "total": len(pros_df),

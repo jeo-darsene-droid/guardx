@@ -9,6 +9,8 @@ import pandas as pd
 from fastapi import APIRouter, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, JSONResponse
 
+from db import get_db
+
 router = APIRouter()
 
 
@@ -210,21 +212,16 @@ async def filter_properties(
                 "Notes": "",
             })
 
-        # Log activity
-        log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "activity_log.json")
-        entries = []
-        if os.path.exists(log_path):
-            with open(log_path, "r", encoding="utf-8") as f:
-                entries = json.load(f)
-        entries.insert(0, {
-            "action": "properties_filtered",
-            "detail": f"{len(results)} propriétés trouvées",
-            "detail_count": len(results),
-            "timestamp": datetime.now().isoformat(),
-        })
-        entries = entries[:50]
-        with open(log_path, "w", encoding="utf-8") as f:
-            json.dump(entries, f, ensure_ascii=False, indent=2)
+        # Log activity to Supabase
+        try:
+            db = get_db()
+            db.table("activity_log").insert({
+                "action": "properties_filtered",
+                "detail": f"{len(results)} propriétés trouvées",
+                "detail_count": len(results),
+            }).execute()
+        except Exception:
+            pass
 
         return {
             "count": len(results),

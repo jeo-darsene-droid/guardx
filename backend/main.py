@@ -1,13 +1,21 @@
 import json
 import os
+from datetime import datetime, date
+
+from dotenv import load_dotenv
+
+# Load .env before anything reads env vars
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+load_dotenv()  # also try root .env
+
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from routes import letters, duplicates, properties
+from db import get_db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 
 app = FastAPI(title="Guard-X Dashboard API", version="1.0.0")
 
@@ -30,68 +38,61 @@ app.include_router(duplicates.router, prefix="/api", tags=["duplicates"])
 app.include_router(properties.router, prefix="/api", tags=["properties"])
 
 
-def load_config() -> dict:
-    if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-
-def save_config(cfg: dict):
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
-
-
 @app.get("/api/config")
 def get_config():
-    return load_config()
+    db = get_db()
+    resp = db.table("config").select("*").eq("id", 1).execute()
+    if resp.data:
+        row = resp.data[0]
+        row.pop("id", None)
+        row.pop("updated_at", None)
+        return row
+    return {}
 
 
 @app.put("/api/config")
 async def update_config(body: dict):
-    save_config(body)
+    db = get_db()
+    body["updated_at"] = datetime.now().isoformat()
+    db.table("config").upsert({"id": 1, **body}).execute()
     return {"status": "ok", "config": body}
 
 
 @app.get("/api/activity")
 def get_activity():
     """Return recent activity log (last 5 entries)."""
-    log_path = os.path.join(BASE_DIR, "activity_log.json")
-    if os.path.exists(log_path):
-        with open(log_path, "r", encoding="utf-8") as f:
-            entries = json.load(f)
-        return entries[:5]
-    return []
+    db = get_db()
+    resp = db.table("activity_log").select("*").order("created_at", desc=True).limit(5).execute()
+    return [
+        {"action": r["action"], "detail": r["detail"], "detail_count": r.get("detail_count", 0), "timestamp": r["created_at"]}
+        for r in (resp.data or [])
+    ]
 
 
 @app.post("/api/activity")
 async def log_activity(body: dict):
-    """Append an activity entry and keep last 50."""
-    from datetime import datetime
-    log_path = os.path.join(BASE_DIR, "activity_log.json")
-    entries = []
-    if os.path.exists(log_path):
-        with open(log_path, "r", encoding="utf-8") as f:
-            entries = json.load(f)
-    entry = {
+    """Append an activity entry."""
+    db = get_db()
+    db.table("activity_log").insert({
         "action": body.get("action", ""),
         "detail": body.get("detail", ""),
-        "timestamp": datetime.now().isoformat(),
-    }
-    entries.insert(0, entry)
-    entries = entries[:50]
-    with open(log_path, "w", encoding="utf-8") as f:
-        json.dump(entries, f, ensure_ascii=False, indent=2)
+        "detail_count": body.get("detail_count", 0),
+    }).execute()
     return {"status": "ok"}
 
 
 @app.post("/api/upload-logo")
 async def upload_logo(file: UploadFile = File(...)):
-    """Replace the guardx_logo.png file."""
-    import shutil
+    """Upload logo to Supabase Storage or save locally."""
+    content = await file.read()
+    # Try saving locally first (works in non-serverless)
     logo_path = os.path.join(BASE_DIR, "assets", "guardx_logo.png")
-    with open(logo_path, "wb") as f:
-        f.write(await file.read())
+    try:
+        os.makedirs(os.path.dirname(logo_path), exist_ok=True)
+        with open(logo_path, "wb") as f:
+            f.write(content)
+    except OSError:
+        pass
     return {"status": "ok", "path": "assets/guardx_logo.png"}
 
 
@@ -107,35 +108,36 @@ async def import_prospects(file: UploadFile = File(...)):
     return {"columns": columns, "rows": rows, "total_rows": len(df)}
 
 
-PROSPECTS_PATH = os.path.join(BASE_DIR, "prospects_data.json")
-
-
 @app.get("/api/prospects")
 def get_prospects():
     """Load all persisted prospects."""
-    if os.path.exists(PROSPECTS_PATH):
-        with open(PROSPECTS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+    db = get_db()
+    resp = db.table("prospects").select("*").order("id").execute()
+    return resp.data or []
 
 
 @app.post("/api/prospects")
 async def save_prospects(body: dict):
     """Save full prospect list (overwrite)."""
+    db = get_db()
     prospects = body.get("prospects", [])
-    with open(PROSPECTS_PATH, "w", encoding="utf-8") as f:
-        json.dump(prospects, f, ensure_ascii=False, indent=2)
+    # Clear existing and insert all
+    db.table("prospects").delete().gte("id", 0).execute()
+    if prospects:
+        # Strip client-side ids so Supabase auto-generates them
+        clean = [{k: v for k, v in p.items() if k not in ("id", "created_at", "updated_at")} for p in prospects]
+        db.table("prospects").insert(clean).execute()
     return {"status": "ok", "count": len(prospects)}
 
 
 @app.post("/api/prospects/add")
 async def add_prospects(body: dict):
     """Add new prospects to the persisted list (merge, avoid exact duplicates)."""
+    db = get_db()
     new_rows = body.get("prospects", [])
-    existing = []
-    if os.path.exists(PROSPECTS_PATH):
-        with open(PROSPECTS_PATH, "r", encoding="utf-8") as f:
-            existing = json.load(f)
+
+    # Load existing for dedup
+    existing = (db.table("prospects").select("*").execute()).data or []
 
     def dedup_key(p):
         addr = str(p.get("Adresse", "") or p.get("adresse", "")).lower().strip()
@@ -144,55 +146,52 @@ async def add_prospects(body: dict):
         return f"{addr}|{nb}|{notes}"
 
     existing_keys = {dedup_key(p) for p in existing}
-    max_id = max([p.get("id", 0) for p in existing], default=0)
 
-    added = 0
+    to_insert = []
     for row in new_rows:
         key = dedup_key(row)
         if key in existing_keys:
             continue
-        max_id += 1
-        existing.append({
-            "id": max_id,
+        to_insert.append({
             "entreprise": row.get("Nom_Syndicat", "") or row.get("Entreprise", ""),
             "contact": row.get("Nom_Gestionnaire", "") or row.get("Contact", ""),
             "telephone": row.get("Téléphone", "") or row.get("Telephone", "") or "",
             "statut": "À contacter",
-            "date": row.get("Date", "") or "",
-            "notes": row.get("Notes", ""),
-            "adresse": row.get("Adresse", ""),
-            "ville": row.get("Ville_CodePostal", ""),
-            "nb_unites": row.get("Nb_Unites", ""),
-            "secteur": row.get("Secteur", ""),
+            "date": str(row.get("Date", "") or ""),
+            "notes": str(row.get("Notes", "") or ""),
+            "adresse": str(row.get("Adresse", "") or ""),
+            "ville": str(row.get("Ville_CodePostal", "") or ""),
+            "nb_unites": str(row.get("Nb_Unites", "") or ""),
+            "secteur": str(row.get("Secteur", "") or ""),
             "contacte": False,
             "date_contact": "",
         })
         existing_keys.add(key)
-        added += 1
 
-    with open(PROSPECTS_PATH, "w", encoding="utf-8") as f:
-        json.dump(existing, f, ensure_ascii=False, indent=2)
+    if to_insert:
+        db.table("prospects").insert(to_insert).execute()
 
-    return {"status": "ok", "added": added, "total": len(existing)}
+    total = len(existing) + len(to_insert)
+    return {"status": "ok", "added": len(to_insert), "total": total}
 
 
 @app.get("/api/kpis")
 def get_kpis():
     """Return KPI counts from activity log."""
-    log_path = os.path.join(BASE_DIR, "activity_log.json")
-    entries = []
-    if os.path.exists(log_path):
-        with open(log_path, "r", encoding="utf-8") as f:
-            entries = json.load(f)
-    from datetime import datetime, date
+    db = get_db()
+    resp = db.table("activity_log").select("*").execute()
+    entries = resp.data or []
     today = date.today().isoformat()
-    letters_today = sum(1 for e in entries if e.get("action") == "letters_generated" and e.get("timestamp", "").startswith(today))
+    letters_today = sum(
+        1 for e in entries
+        if e.get("action") == "letters_generated" and (e.get("created_at", "") or "").startswith(today)
+    )
     duplicates_removed = sum(e.get("detail_count", 0) for e in entries if e.get("action") == "duplicates_checked")
     properties_targeted = sum(e.get("detail_count", 0) for e in entries if e.get("action") == "properties_filtered")
-    prospects = sum(e.get("detail_count", 0) for e in entries if e.get("action") == "prospects_imported")
+    prospects_count = sum(e.get("detail_count", 0) for e in entries if e.get("action") == "prospects_imported")
     return {
         "letters_today": letters_today,
-        "prospects": prospects,
+        "prospects": prospects_count,
         "duplicates_removed": duplicates_removed,
         "properties_targeted": properties_targeted,
     }

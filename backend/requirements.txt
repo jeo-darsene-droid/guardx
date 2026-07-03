@@ -6,3 +6,5 @@ openpyxl
 rapidfuzz
 python-multipart
 Unidecode
+supabase
+python-dotenv
