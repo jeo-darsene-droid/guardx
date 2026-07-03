@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+venv/
+env/
+.venv/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/node_modules/
+
+# Environment & secrets
+.env
+.env.*
+*.key
+
+# Data files (user-specific, not for version control)
+backend/prospects_data.json
+backend/activity_log.json
+backend/uploads/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
