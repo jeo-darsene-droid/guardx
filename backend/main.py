@@ -13,14 +13,17 @@ app = FastAPI(title="Guard-X Dashboard API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://*.vercel.app"],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Serve assets (logo etc.)
-app.mount("/assets", StaticFiles(directory=os.path.join(BASE_DIR, "assets")), name="assets")
+# Serve assets (logo etc.) — skip if directory doesn't exist (e.g. serverless)
+_assets_dir = os.path.join(BASE_DIR, "assets")
+if os.path.isdir(_assets_dir):
+    app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
 
 app.include_router(letters.router, prefix="/api", tags=["letters"])
 app.include_router(duplicates.router, prefix="/api", tags=["duplicates"])
