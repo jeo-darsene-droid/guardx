@@ -130,7 +130,7 @@ def generate_letter(prospect: dict, settings: dict) -> bytes:
     # ── SUBJECT ──
     p = doc.add_paragraph()
     _set_paragraph_spacing(p, 10, 6, 1.15)
-    run = p.add_run("Objet : Votre inspection annuelle en protection incendie")
+    run = p.add_run("Objet : Services de protection incendie pour votre copropriété")
     run.bold = True
     run.font.size = Pt(11)
 
@@ -153,30 +153,37 @@ def generate_letter(prospect: dict, settings: dict) -> bytes:
         p = doc.add_paragraph("Bonjour,")
     _set_paragraph_spacing(p, 6, 6, 1.15)
 
-    # ── BODY — lettre de relance inspection annuelle ──
-    body_paragraphs = [
-        "Depuis quelques semaines, notre équipe du Service à la clientèle tente d'entrer en "
-        "communication avec vous, et ce, sans succès.",
+    # ── BODY — lettre de prospection ──
+    nb_unites = prospect.get("Nb_Unites", "")
+    unites_str = f" vos {nb_unites} unités" if nb_unites else " vos unités"
+    secteur = prospect.get("Secteur", "") or prospect.get("Ville_CodePostal", "") or ""
+    secteur_str = f" de {secteur}" if secteur else " d'Anjou et ses environs"
+    body = (
+        f"À titre de spécialiste en protection incendie desservant le secteur{secteur_str}, "
+        f"nous souhaitons vous offrir nos services d'inspection et de certification pour{unites_str} "
+        f"de copropriété. Notre équipe qualifiée assure une conformité complète aux normes municipales "
+        f"et provinciales en matière de sécurité incendie."
+    )
+    p = doc.add_paragraph(body)
+    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    _set_paragraph_spacing(p, 0, 6, 1.15)
 
-        "Nous désirons vous informer que l'ensemble de vos inspections pour l'immeuble mentionné "
-        "en rubrique est dû, et ce, depuis quelque temps.",
+    # ── SERVICES ──
+    p = doc.add_paragraph()
+    _set_paragraph_spacing(p, 0, 3, 1.15)
+    run = p.add_run("Nos services incluent :")
+    run.bold = True
 
-        "Comme vous le savez sans doute, il y va de la sécurité des gens habitants cet immeuble "
-        "de faire inspecter votre immeuble. De plus, le règlement municipal exige l'inspection "
-        "annuelle du réseau et pour en faire foi, un rapport.",
-
-        "Si nous demeurons sans nouvelle de votre part d'ici les 10 prochains jours, vous serez "
-        "considéré comme étant avisé et ayant choisi une autre option. Nous procéderons à la mise "
-        "à jour de votre statut et cesserons les tentatives de communication.",
-
-        "Compte tenu de l'importance de faire inspecter votre immeuble, il serait important de "
-        "communiquer avec moi, dans les plus brefs délais, afin de planifier la visite de notre "
-        "technicien(ne).",
+    services = [
+        "✓ Inspection et certification de vos extincteurs",
+        "✓ Tests fonctionnels de l'éclairage d'urgence (blocs autonomes)",
+        "✓ Vérification des systèmes d'alarme incendie et détecteurs",
+        "✓ Inspection des systèmes de gicleurs",
     ]
-    for para_text in body_paragraphs:
-        p = doc.add_paragraph(para_text)
-        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        _set_paragraph_spacing(p, 0, 6, 1.15)
+    for svc in services:
+        p = doc.add_paragraph(svc)
+        _set_paragraph_spacing(p, 0, 1, 1.15)
+        p.paragraph_format.left_indent = Cm(0.5)
 
     # ── NOTES (optionnel) ──
     notes = prospect.get("Notes", "")
@@ -185,8 +192,15 @@ def generate_letter(prospect: dict, settings: dict) -> bytes:
         _set_paragraph_spacing(p, 4, 6, 1.15)
 
     # ── CLOSING ──
-    p = doc.add_paragraph("Salutations cordiales,")
-    _set_paragraph_spacing(p, 6, 20, 1.15)
+    p = doc.add_paragraph(
+        "Nous serions ravis de vous rencontrer pour évaluer vos besoins et vous proposer une soumission "
+        "gratuite et sans engagement. N'hésitez pas à nous contacter au numéro ci-dessous."
+    )
+    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    _set_paragraph_spacing(p, 4, 8, 1.15)
+
+    p = doc.add_paragraph("Cordialement,")
+    _set_paragraph_spacing(p, 0, 20, 1.15)
 
     # ── SOUS TOUTES RÉSERVES (underlined, per template) ──
     p = doc.add_paragraph("SOUS TOUTES RÉSERVES")
