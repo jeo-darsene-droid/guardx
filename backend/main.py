@@ -12,7 +12,7 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from routes import letters, duplicates, properties
+from routes import letters, duplicates, properties, clients, report
 from db import get_db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +36,8 @@ if os.path.isdir(_assets_dir):
 app.include_router(letters.router, prefix="/api", tags=["letters"])
 app.include_router(duplicates.router, prefix="/api", tags=["duplicates"])
 app.include_router(properties.router, prefix="/api", tags=["properties"])
+app.include_router(clients.router, prefix="/api", tags=["clients"])
+app.include_router(report.router, prefix="/api", tags=["report"])
 
 
 @app.get("/api/config")
@@ -163,6 +165,8 @@ async def add_prospects(body: dict):
             "ville": str(row.get("Ville_CodePostal", "") or ""),
             "nb_unites": str(row.get("Nb_Unites", "") or ""),
             "secteur": str(row.get("Secteur", "") or ""),
+            "segment": str(row.get("Segment", "") or ""),
+            "next_action": str(row.get("Prochaine_Action", "") or ""),
             "contacte": False,
             "date_contact": "",
         })
@@ -173,6 +177,27 @@ async def add_prospects(body: dict):
 
     total = len(existing) + len(to_insert)
     return {"status": "ok", "added": len(to_insert), "total": total}
+
+
+@app.get("/api/followups")
+def get_followups():
+    """Suivis dus aujourd'hui et en retard, pour le panneau « Aujourd'hui »."""
+    db = get_db()
+    prospects = (db.table("prospects").select("*").execute()).data or []
+    today = date.today().isoformat()
+    inactive = ("Vendu / Signé", "Récupéré (signé)", "Hors d'affaires")
+    due, overdue = [], []
+    for p in prospects:
+        na = str(p.get("next_action") or "").strip()
+        if not na or p.get("statut") in inactive:
+            continue
+        if na == today:
+            due.append(p)
+        elif na < today:
+            overdue.append(p)
+    overdue.sort(key=lambda p: p.get("next_action", ""))
+    due.sort(key=lambda p: str(p.get("entreprise", "")))
+    return {"today": today, "due": due, "overdue": overdue}
 
 
 @app.get("/api/kpis")

@@ -14,6 +14,7 @@ export default function LetterGenerator({ config, showToast }) {
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress] = useState(0)
   const [resultUrl, setResultUrl] = useState(null)
+  const [clientWarnings, setClientWarnings] = useState(null)
 
   const onDrop = useCallback(async (acceptedFiles) => {
     const f = acceptedFiles[0]
@@ -30,7 +31,27 @@ export default function LetterGenerator({ config, showToast }) {
       setPreview(data)
     } catch {
       showToast('Erreur lors du chargement du fichier', 'error')
+      return
     }
+
+    // Garde-fou : vérification automatique de TOUTES les lignes contre la base clients
+    setClientWarnings(null)
+    try {
+      const fullData = new FormData()
+      fullData.append('file', f)
+      const fullRes = await fetch(`${API}/import-prospects`, { method: 'POST', body: fullData })
+      const full = await fullRes.json()
+      const checkRes = await fetch(`${API}/clients/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: full.rows || [], address_field: 'Adresse' }),
+      })
+      const check = await checkRes.json()
+      if (check.checked && check.flagged > 0) {
+        setClientWarnings(check)
+        showToast(`⚠️ ${check.flagged} adresse(s) sont peut-être déjà des clients Guard-X`, 'error')
+      }
+    } catch { /* base clients indisponible — on continue */ }
   }, [showToast])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -142,6 +163,22 @@ export default function LetterGenerator({ config, showToast }) {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Garde-fou base clients */}
+      {clientWarnings && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+          <h3 className="font-semibold text-amber-800 mb-2">⚠️ Clients existants détectés ({clientWarnings.flagged})</h3>
+          <p className="text-sm text-amber-700 mb-3">Ces adresses correspondent à des clients dans la base Sage — vérifiez avant d'envoyer une lettre :</p>
+          <div className="space-y-1 max-h-40 overflow-y-auto">
+            {clientWarnings.results.map((r, i) => (
+              <div key={i} className="flex items-center gap-2 text-sm">
+                <span className="font-medium text-amber-900">{r.adresse}</span>
+                <span className="text-amber-600">→ {r.client} ({r.score}%)</span>
+              </div>
+            ))}
           </div>
         </div>
       )}

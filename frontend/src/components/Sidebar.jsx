@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Mail, CopyCheck, Building2, Users, Settings, ChevronLeft, Flame } from 'lucide-react'
+import { LayoutDashboard, Mail, CopyCheck, Building2, Users, Database, Settings, ChevronLeft, Flame } from 'lucide-react'
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', emoji: '📊' },
@@ -7,6 +7,7 @@ const navItems = [
   { to: '/doublons', icon: CopyCheck, label: 'Vérificateur de doublons', emoji: '🔍' },
   { to: '/coproprietes', icon: Building2, label: 'Ciblage copropriétés', emoji: '🏘️' },
   { to: '/prospects', icon: Users, label: 'Mes prospects', emoji: '📋' },
+  { to: '/base-clients', icon: Database, label: 'Base clients', emoji: '🛡️' },
   { to: '/parametres', icon: Settings, label: 'Paramètres', emoji: '⚙️' },
 ]
 

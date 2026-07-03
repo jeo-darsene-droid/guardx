@@ -4,15 +4,46 @@ import { Upload, Download, Users, Search, Phone, Check } from 'lucide-react'
 const API = '/api'
 
 const STATUS_OPTIONS = [
-  { value: 'À contacter', color: 'bg-blue-100 text-blue-700', dot: '🔵' },
+  { value: 'À contacter / À appeler', color: 'bg-blue-100 text-blue-700', dot: '🔵' },
+  { value: 'Message laissé', color: 'bg-purple-100 text-purple-700', dot: '🟣' },
+  { value: 'Contacté – intéressé', color: 'bg-teal-100 text-teal-700', dot: '🟢' },
+  { value: 'Contacté – à rappeler', color: 'bg-cyan-100 text-cyan-700', dot: '📞' },
+  { value: 'Rencontre prévue', color: 'bg-indigo-100 text-indigo-700', dot: '📅' },
   { value: 'Courriel envoyé', color: 'bg-yellow-100 text-yellow-700', dot: '🟡' },
-  { value: 'En attente', color: 'bg-orange-100 text-orange-700', dot: '🟠' },
-  { value: 'Soumission envoyée', color: 'bg-green-100 text-green-700', dot: '🟢' },
-  { value: 'Vendu', color: 'bg-emerald-100 text-emerald-700', dot: '✅' },
-  { value: 'Perdu', color: 'bg-red-100 text-red-700', dot: '❌' },
+  { value: 'En attente (rapport/réponse)', color: 'bg-orange-100 text-orange-700', dot: '🟠' },
+  { value: 'Soumission envoyée', color: 'bg-green-100 text-green-700', dot: '�' },
+  { value: 'Soumission révisée', color: 'bg-lime-100 text-lime-700', dot: '📝' },
+  { value: 'En fermeture', color: 'bg-sky-100 text-sky-700', dot: '🤝' },
+  { value: 'Vendu / Signé', color: 'bg-emerald-100 text-emerald-700', dot: '✅' },
+  { value: 'Récupéré (signé)', color: 'bg-emerald-100 text-emerald-800', dot: '♻️' },
+  { value: 'Perdu (revisiter année suivante)', color: 'bg-red-100 text-red-700', dot: '❌' },
+  { value: 'Hors d\'affaires', color: 'bg-gray-200 text-gray-600', dot: '⚫' },
+  { value: 'À repasser', color: 'bg-amber-100 text-amber-700', dot: '🔁' },
 ]
 
-const getStatusStyle = (status) => STATUS_OPTIONS.find(s => s.value === status) || STATUS_OPTIONS[0]
+const SEGMENT_OPTIONS = [
+  'Syndicat de copropriété',
+  'Restaurant / Bar',
+  'Hôtel',
+  'Industriel / Commercial',
+  'Multi-sites',
+  'Partenariat',
+  'Ancien client (win-back)',
+  'Autre',
+]
+
+// Anciens statuts (v1) → nouveaux statuts
+const LEGACY_STATUS_MAP = {
+  'À contacter': 'À contacter / À appeler',
+  'En attente': 'En attente (rapport/réponse)',
+  'Vendu': 'Vendu / Signé',
+  'Perdu': 'Perdu (revisiter année suivante)',
+}
+
+const getStatusStyle = (status) => {
+  const mapped = LEGACY_STATUS_MAP[status] || status
+  return STATUS_OPTIONS.find(s => s.value === mapped) || STATUS_OPTIONS[0]
+}
 
 export default function ProspectTracker({ showToast }) {
   const [prospects, setProspects] = useState([])
@@ -57,12 +88,29 @@ export default function ProspectTracker({ showToast }) {
       const res = await fetch(`${API}/import-prospects`, { method: 'POST', body: formData })
       const data = await res.json()
       const allRows = data.rows || []
+
+      // Garde-fou : vérification automatique contre la base clients
+      try {
+        const checkRes = await fetch(`${API}/clients/check`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rows: allRows, address_field: 'Adresse' }),
+        })
+        const check = await checkRes.json()
+        if (check.checked && check.flagged > 0) {
+          const names = check.results.slice(0, 3).map(r => r.client).join(', ')
+          showToast(`⚠️ ${check.flagged} adresse(s) correspondent à des clients existants (${names}${check.flagged > 3 ? '…' : ''})`, 'error')
+        }
+      } catch { /* base clients indisponible — on continue */ }
+
       const newProspects = allRows.map((r, i) => ({
         id: Date.now() + i,
         entreprise: r.Entreprise || r.Nom_Syndicat || '',
         contact: r.Contact || r.Nom_Gestionnaire || '',
         telephone: r.Téléphone || r.Telephone || r.phone || '',
-        statut: r.Statut || 'À contacter',
+        statut: LEGACY_STATUS_MAP[r.Statut] || r.Statut || 'À contacter / À appeler',
+        segment: r.Segment || '',
+        next_action: r.Prochaine_Action || r.next_action || '',
         date: r.Date || new Date().toISOString().split('T')[0],
         notes: r.Notes || '',
         adresse: r.Adresse || '',
@@ -82,6 +130,14 @@ export default function ProspectTracker({ showToast }) {
 
   const handleStatusChange = (id, newStatus) => {
     updateProspects(prospects.map(p => p.id === id ? { ...p, statut: newStatus } : p))
+  }
+
+  const handleNextActionChange = (id, newDate) => {
+    updateProspects(prospects.map(p => p.id === id ? { ...p, next_action: newDate } : p))
+  }
+
+  const handleSegmentChange = (id, newSegment) => {
+    updateProspects(prospects.map(p => p.id === id ? { ...p, segment: newSegment } : p))
   }
 
   const handleMarkContacted = (id) => {
@@ -176,8 +232,8 @@ export default function ProspectTracker({ showToast }) {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-3 sm:grid-cols-7 gap-3">
-        {stats.map(s => (
+      <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
+        {stats.filter(s => s.count > 0).map(s => (
           <div key={s.value} className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 text-center">
             <div className="text-xl mb-0.5">{s.dot}</div>
             <div className="text-xl font-bold text-navy">{s.count}</div>
@@ -235,7 +291,9 @@ export default function ProspectTracker({ showToast }) {
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Contact</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Téléphone</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Adresse</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">Segment</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Statut</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">Prochaine action</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Date</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Dernier contact</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Notes</th>
@@ -261,12 +319,34 @@ export default function ProspectTracker({ showToast }) {
                       <td className="px-4 py-3 text-gray-500 max-w-[180px] truncate">{p.adresse || '—'}</td>
                       <td className="px-4 py-3">
                         <select
-                          value={p.statut}
+                          value={p.segment || ''}
+                          onChange={e => handleSegmentChange(p.id, e.target.value)}
+                          className="px-2 py-1 rounded-lg text-xs border border-gray-200 cursor-pointer text-gray-600 max-w-[140px]"
+                        >
+                          <option value="">—</option>
+                          {SEGMENT_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-4 py-3">
+                        <select
+                          value={LEGACY_STATUS_MAP[p.statut] || p.statut}
                           onChange={e => handleStatusChange(p.id, e.target.value)}
                           className={`px-2.5 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${st.color}`}
                         >
                           {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.dot} {s.value}</option>)}
                         </select>
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          type="date"
+                          value={p.next_action || ''}
+                          onChange={e => handleNextActionChange(p.id, e.target.value)}
+                          className={`px-2 py-1 rounded-lg text-xs border cursor-pointer ${
+                            p.next_action && p.next_action < new Date().toISOString().split('T')[0]
+                              ? 'border-red-300 bg-red-50 text-red-700 font-medium'
+                              : 'border-gray-200 text-gray-600'
+                          }`}
+                        />
                       </td>
                       <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{p.date}</td>
                       <td className="px-4 py-3 text-gray-500 whitespace-nowrap">

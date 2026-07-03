@@ -1,25 +1,82 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FileText, Users, CopyCheck, Building2, Mail, Search, Target, ArrowRight, Activity } from 'lucide-react'
+import { FileText, Users, CopyCheck, Building2, Mail, Search, Target, ArrowRight, Activity, AlarmClock, Phone, Footprints, FileCheck, Trophy, Download } from 'lucide-react'
 
 const API = '/api'
+
+const MONTHS_FR = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+
+const QUICK_LOG = [
+  { action: 'appel', label: 'Appel', icon: Phone, color: 'bg-blue-600 hover:bg-blue-700' },
+  { action: 'visite', label: 'Visite terrain', icon: Footprints, color: 'bg-teal-600 hover:bg-teal-700' },
+  { action: 'courriel', label: 'Courriel', icon: Mail, color: 'bg-yellow-600 hover:bg-yellow-700' },
+  { action: 'soumission', label: 'Soumission envoyée', icon: FileCheck, color: 'bg-green-600 hover:bg-green-700' },
+  { action: 'vente', label: 'Vente signée', icon: Trophy, color: 'bg-accent hover:bg-accent-light' },
+]
 
 export default function Dashboard({ showToast }) {
   const navigate = useNavigate()
   const [kpis, setKpis] = useState({ letters_today: 0, prospects: 0, duplicates_removed: 0, properties_targeted: 0 })
   const [activity, setActivity] = useState([])
+  const [followups, setFollowups] = useState({ due: [], overdue: [] })
   const [loading, setLoading] = useState(true)
+  const now = new Date()
+  const [reportMonth, setReportMonth] = useState(now.getMonth() + 1)
+  const [reportYear, setReportYear] = useState(now.getFullYear())
+  const [generatingReport, setGeneratingReport] = useState(false)
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     Promise.all([
       fetch(`${API}/kpis`).then(r => r.json()).catch(() => ({})),
       fetch(`${API}/activity`).then(r => r.json()).catch(() => []),
-    ]).then(([k, a]) => {
+      fetch(`${API}/followups`).then(r => r.json()).catch(() => ({ due: [], overdue: [] })),
+    ]).then(([k, a, f]) => {
       setKpis(k)
       setActivity(a)
+      setFollowups(f)
       setLoading(false)
     })
   }, [])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  const handleQuickLog = async (action, label) => {
+    try {
+      await fetch(`${API}/activity`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, detail: label, detail_count: 1 }),
+      })
+      showToast(`${label} enregistré(e) au journal`)
+      loadData()
+    } catch {
+      showToast('Erreur lors de l\'enregistrement', 'error')
+    }
+  }
+
+  const handleGenerateReport = async () => {
+    setGeneratingReport(true)
+    try {
+      const res = await fetch(`${API}/report/monthly`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year: reportYear, month: reportMonth }),
+      })
+      if (!res.ok) throw new Error()
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `rapport_prospection_${reportYear}_${String(reportMonth).padStart(2, '0')}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast('Rapport mensuel généré')
+    } catch {
+      showToast('Erreur lors de la génération du rapport', 'error')
+    } finally {
+      setGeneratingReport(false)
+    }
+  }
 
   const kpiCards = [
     { label: 'Lettres générées aujourd\'hui', value: kpis.letters_today || 0, icon: FileText, color: 'bg-navy' },
@@ -45,6 +102,57 @@ export default function Dashboard({ showToast }) {
       <div>
         <h1 className="text-2xl font-bold text-navy">Tableau de bord</h1>
         <p className="text-gray-500 text-sm mt-1">Vue d'ensemble de votre activité de prospection</p>
+      </div>
+
+      {/* Panneau Aujourd'hui — suivis dus et en retard */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <AlarmClock size={20} className="text-accent" />
+          <h2 className="text-lg font-semibold text-navy">Aujourd'hui</h2>
+          {(followups.overdue.length + followups.due.length) > 0 && (
+            <span className="ml-auto text-xs font-medium px-2.5 py-1 rounded-full bg-accent/10 text-accent">
+              {followups.overdue.length + followups.due.length} suivi(s) à faire
+            </span>
+          )}
+        </div>
+        {loading ? (
+          <p className="text-gray-400 text-sm py-4 text-center">Chargement...</p>
+        ) : followups.overdue.length === 0 && followups.due.length === 0 ? (
+          <p className="text-gray-400 text-sm py-4 text-center">✅ Aucun suivi dû aujourd'hui. Planifiez vos prochaines actions dans Mes prospects.</p>
+        ) : (
+          <div className="space-y-2">
+            {followups.overdue.map(p => (
+              <button key={`o-${p.id}`} onClick={() => navigate('/prospects')} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-red-50 border border-red-100 hover:bg-red-100 text-left transition-colors">
+                <span className="text-xs font-bold text-red-600 shrink-0 w-24">⚠ {p.next_action}</span>
+                <span className="font-medium text-gray-700 flex-1 truncate">{p.entreprise || p.adresse || '—'}</span>
+                <span className="text-xs text-gray-500 hidden sm:block">{p.statut}</span>
+                {p.telephone && <span className="text-xs text-navy font-medium shrink-0">{p.telephone}</span>}
+              </button>
+            ))}
+            {followups.due.map(p => (
+              <button key={`d-${p.id}`} onClick={() => navigate('/prospects')} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 border border-blue-100 hover:bg-blue-100 text-left transition-colors">
+                <span className="text-xs font-bold text-blue-600 shrink-0 w-24">Aujourd'hui</span>
+                <span className="font-medium text-gray-700 flex-1 truncate">{p.entreprise || p.adresse || '—'}</span>
+                <span className="text-xs text-gray-500 hidden sm:block">{p.statut}</span>
+                {p.telephone && <span className="text-xs text-navy font-medium shrink-0">{p.telephone}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Journal rapide */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <h2 className="text-lg font-semibold text-navy mb-3">Journal rapide</h2>
+        <p className="text-xs text-gray-400 mb-3">Enregistrez chaque action — elles alimentent automatiquement le rapport mensuel de Mel.</p>
+        <div className="flex flex-wrap gap-2">
+          {QUICK_LOG.map(q => (
+            <button key={q.action} onClick={() => handleQuickLog(q.action, q.label)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors ${q.color}`}>
+              <q.icon size={16} />
+              {q.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -108,6 +216,23 @@ export default function Dashboard({ showToast }) {
                 <ArrowRight size={18} />
               </button>
             ))}
+          </div>
+
+          {/* Rapport mensuel pour Mel */}
+          <div className="mt-5 pt-5 border-t border-gray-100">
+            <h3 className="font-semibold text-navy mb-2">Rapport mensuel (Mel)</h3>
+            <div className="flex gap-2">
+              <select value={reportMonth} onChange={e => setReportMonth(Number(e.target.value))} className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-navy text-sm">
+                {MONTHS_FR.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </select>
+              <select value={reportYear} onChange={e => setReportYear(Number(e.target.value))} className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-navy text-sm">
+                {[now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <button onClick={handleGenerateReport} disabled={generatingReport} className="flex items-center gap-2 px-4 py-2 bg-navy text-white rounded-lg hover:bg-navy-light text-sm font-medium disabled:opacity-50">
+                <Download size={16} />
+                {generatingReport ? 'Génération...' : 'Générer'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
