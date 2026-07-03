@@ -9,6 +9,7 @@ export default function LetterGenerator({ config, showToast }) {
   const [preview, setPreview] = useState(null)
   const [mode, setMode] = useState(config?.default_mode || 'postal')
   const [repName, setRepName] = useState(config?.rep_name || 'Jéo-Darsène Saint-Louis')
+  const [repTitle, setRepTitle] = useState(config?.rep_title || 'Gestionnaire de comptes clients')
   const [phone, setPhone] = useState(config?.phone || '438-406-5077')
   const [email, setEmail] = useState(config?.email || 'jdsaintlouis@guard-x.com')
   const [generating, setGenerating] = useState(false)
@@ -73,7 +74,7 @@ export default function LetterGenerator({ config, showToast }) {
 
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('settings', JSON.stringify({ mode, rep_name: repName, phone, email }))
+    formData.append('settings', JSON.stringify({ mode, rep_name: repName, rep_title: repTitle, phone, email }))
 
     try {
       setProgress(40)
@@ -81,10 +82,23 @@ export default function LetterGenerator({ config, showToast }) {
       setProgress(80)
       if (!res.ok) throw new Error('Échec de génération')
       const blob = await res.blob()
+      const contentDisposition = res.headers.get('Content-Disposition')
+      let filename = 'lettres_guardx.zip'
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+        if (match && match[1]) filename = match[1].replace(/['"]/g, '')
+      }
       const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
       setResultUrl(url)
       setProgress(100)
-      showToast('Lettres générées avec succès!')
+      showToast('Lettres générées — téléchargement démarré!')
     } catch {
       showToast('Erreur lors de la génération des lettres', 'error')
     } finally {
@@ -211,6 +225,10 @@ export default function LetterGenerator({ config, showToast }) {
           <div>
             <label className="text-sm font-medium text-gray-600 block mb-1">Nom du représentant</label>
             <input value={repName} onChange={e => setRepName(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-navy" />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-600 block mb-1">Titre / Fonction</label>
+            <input value={repTitle} onChange={e => setRepTitle(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-navy" />
           </div>
           <div>
             <label className="text-sm font-medium text-gray-600 block mb-1">Téléphone</label>
