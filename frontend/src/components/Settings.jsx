@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Save, Upload, User, Phone, Mail, FileImage } from 'lucide-react'
+import { Save, Upload, User, Phone, Mail, FileImage, Briefcase } from 'lucide-react'
 
 const API = '/api'
 
 export default function Settings({ config, setConfig, showToast }) {
   const [form, setForm] = useState({
     rep_name: config?.rep_name || 'Jéo-Darsène Saint-Louis',
+    rep_title: config?.rep_title || 'Gestionnaire de comptes clients',
     phone: config?.phone || '438-406-5077',
     email: config?.email || 'jdsaintlouis@guard-x.com',
     default_mode: config?.default_mode || 'postal',
@@ -69,6 +70,12 @@ export default function Settings({ config, setConfig, showToast }) {
               <User size={14} /> Nom du représentant
             </label>
             <input value={form.rep_name} onChange={e => update('rep_name', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-navy" />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-600 flex items-center gap-2 mb-1">
+              <Briefcase size={14} /> Titre / Fonction
+            </label>
+            <input value={form.rep_title} onChange={e => update('rep_title', e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-navy" />
           </div>
           <div>
             <label className="text-sm font-medium text-gray-600 flex items-center gap-2 mb-1">

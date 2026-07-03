@@ -2,6 +2,9 @@
 -- À exécuter dans le SQL Editor de Supabase (https://supabase.com/dashboard → SQL Editor)
 -- Sans danger : uniquement des ajouts, aucune donnée existante n'est modifiée.
 
+-- 0. Nouveau champ config : titre du représentant
+ALTER TABLE config ADD COLUMN IF NOT EXISTS rep_title TEXT DEFAULT 'Gestionnaire de comptes clients';
+
 -- 1. Nouveaux champs sur les prospects : segment + prochaine action
 ALTER TABLE prospects ADD COLUMN IF NOT EXISTS segment TEXT DEFAULT '';
 ALTER TABLE prospects ADD COLUMN IF NOT EXISTS next_action TEXT DEFAULT '';

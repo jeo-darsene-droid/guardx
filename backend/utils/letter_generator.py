@@ -13,13 +13,6 @@ ACCENT_RED = RGBColor(0xB1, 0x12, 0x26)
 NAVY = RGBColor(0x1F, 0x4E, 0x79)
 GREY = RGBColor(0x99, 0x99, 0x99)
 
-SERVICES = [
-    "✓ Inspection et certification de vos extincteurs",
-    "✓ Tests fonctionnels de l'éclairage d'urgence (blocs autonomes)",
-    "✓ Vérification des systèmes d'alarme incendie et détecteurs",
-    "✓ Inspection des systèmes de gicleurs",
-]
-
 FOOTER_TEXT = "10 600, boul. Parkway, Montréal (Québec) H1J 1R6 – www.guard-x.com"
 
 
@@ -62,8 +55,18 @@ def _add_bottom_border_to_paragraph(paragraph, color="1F4E79", size="12"):
     pPr.append(pBdr)
 
 
+def _add_underline(paragraph):
+    """Add underline formatting to all runs in a paragraph."""
+    for run in paragraph.runs:
+        run.font.underline = True
+
+
 def generate_letter(prospect: dict, settings: dict) -> bytes:
-    """Generate a single Word letter and return bytes."""
+    """Generate a single Word letter and return bytes.
+
+    Format basé sur le modèle LETTRE.doc — lettre de relance pour inspection
+    annuelle de protection incendie.
+    """
     doc = Document()
 
     # Margins — professional letter spacing
@@ -94,16 +97,14 @@ def generate_letter(prospect: dict, settings: dict) -> bytes:
     _set_paragraph_spacing(p, 2, 6, 1.0)
     _add_bottom_border_to_paragraph(p, color="1F4E79", size="8")
 
-    # ── DATE (right-aligned) ──
+    # ── DATE (left-aligned, per template) ──
     months_fr = [
         "janvier", "février", "mars", "avril", "mai", "juin",
         "juillet", "août", "septembre", "octobre", "novembre", "décembre",
     ]
     today = date.today()
-    secteur_date = (prospect.get("Secteur", "") or "Anjou").strip() or "Anjou"
-    date_str = f"{secteur_date}, le {today.day} {months_fr[today.month - 1]} {today.year}"
+    date_str = f"Le {today.day} {months_fr[today.month - 1]} {today.year}"
     p = doc.add_paragraph(date_str)
-    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     _set_paragraph_spacing(p, 4, 10, 1.15)
 
     # ── RECIPIENT BLOCK (top-left) ──
@@ -129,73 +130,87 @@ def generate_letter(prospect: dict, settings: dict) -> bytes:
     # ── SUBJECT ──
     p = doc.add_paragraph()
     _set_paragraph_spacing(p, 10, 6, 1.15)
-    run = p.add_run("Objet : Services de protection incendie pour votre copropriété")
+    run = p.add_run("Objet : Votre inspection annuelle en protection incendie")
     run.bold = True
-    run.font.color.rgb = NAVY
     run.font.size = Pt(11)
+
+    # ── V/RÉF. — référence de l'immeuble ──
+    ref_adresse = ""
+    if isinstance(prospect.get("Adresse"), str) and prospect.get("Adresse", "").strip():
+        ref_adresse = prospect["Adresse"].strip()
+    elif isinstance(prospect.get("Ville_CodePostal"), str) and prospect.get("Ville_CodePostal", "").strip():
+        ref_adresse = prospect["Ville_CodePostal"].strip()
+    if ref_adresse:
+        p = doc.add_paragraph()
+        _set_paragraph_spacing(p, 0, 6, 1.15)
+        run = p.add_run(f"V/Réf. : {ref_adresse}")
+        run.font.size = Pt(10)
 
     # ── SALUTATION ──
     if gestionnaire:
         p = doc.add_paragraph(f"Bonjour {gestionnaire},")
     else:
         p = doc.add_paragraph("Bonjour,")
-    _set_paragraph_spacing(p, 4, 6, 1.15)
+    _set_paragraph_spacing(p, 6, 6, 1.15)
 
-    # ── BODY ──
-    nb_unites = prospect.get("Nb_Unites", "")
-    unites_str = f" vos {nb_unites} unités" if nb_unites else " vos unités"
-    secteur = prospect.get("Secteur", "") or prospect.get("Ville_CodePostal", "") or ""
-    secteur_str = f" de {secteur}" if secteur else " d'Anjou et ses environs"
-    body = (
-        f"À titre de spécialiste en protection incendie desservant le secteur{secteur_str}, "
-        f"nous souhaitons vous offrir nos services d'inspection et de certification pour{unites_str} "
-        f"de copropriété. Notre équipe qualifiée assure une conformité complète aux normes municipales "
-        f"et provinciales en matière de sécurité incendie."
-    )
-    p = doc.add_paragraph(body)
-    _set_paragraph_spacing(p, 0, 6, 1.15)
+    # ── BODY — lettre de relance inspection annuelle ──
+    body_paragraphs = [
+        "Depuis quelques semaines, notre équipe du Service à la clientèle tente d'entrer en "
+        "communication avec vous, et ce, sans succès.",
 
-    # ── SERVICES ──
-    p = doc.add_paragraph()
-    _set_paragraph_spacing(p, 0, 3, 1.15)
-    run = p.add_run("Nos services incluent :")
-    run.bold = True
+        "Nous désirons vous informer que l'ensemble de vos inspections pour l'immeuble mentionné "
+        "en rubrique est dû, et ce, depuis quelque temps.",
 
-    for svc in SERVICES:
-        p = doc.add_paragraph(svc)
-        _set_paragraph_spacing(p, 0, 1, 1.15)
-        p.paragraph_format.left_indent = Cm(0.5)
+        "Comme vous le savez sans doute, il y va de la sécurité des gens habitants cet immeuble "
+        "de faire inspecter votre immeuble. De plus, le règlement municipal exige l'inspection "
+        "annuelle du réseau et pour en faire foi, un rapport.",
 
-    # ── NOTES ──
+        "Si nous demeurons sans nouvelle de votre part d'ici les 10 prochains jours, vous serez "
+        "considéré comme étant avisé et ayant choisi une autre option. Nous procéderons à la mise "
+        "à jour de votre statut et cesserons les tentatives de communication.",
+
+        "Compte tenu de l'importance de faire inspecter votre immeuble, il serait important de "
+        "communiquer avec moi, dans les plus brefs délais, afin de planifier la visite de notre "
+        "technicien(ne).",
+    ]
+    for para_text in body_paragraphs:
+        p = doc.add_paragraph(para_text)
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        _set_paragraph_spacing(p, 0, 6, 1.15)
+
+    # ── NOTES (optionnel) ──
     notes = prospect.get("Notes", "")
     if isinstance(notes, str) and notes.strip():
         p = doc.add_paragraph(f"Note : {notes.strip()}")
         _set_paragraph_spacing(p, 4, 6, 1.15)
 
     # ── CLOSING ──
-    p = doc.add_paragraph(
-        "Nous serions ravis de vous rencontrer pour évaluer vos besoins et vous proposer une soumission "
-        "gratuite et sans engagement. N'hésitez pas à nous contacter au numéro ci-dessous."
-    )
-    _set_paragraph_spacing(p, 4, 8, 1.15)
+    p = doc.add_paragraph("Salutations cordiales,")
+    _set_paragraph_spacing(p, 6, 20, 1.15)
 
-    p = doc.add_paragraph("Cordialement,")
-    _set_paragraph_spacing(p, 0, 10, 1.15)
+    # ── SOUS TOUTES RÉSERVES (underlined, per template) ──
+    p = doc.add_paragraph("SOUS TOUTES RÉSERVES")
+    _set_paragraph_spacing(p, 0, 16, 1.15)
+    _add_underline(p)
 
     # ── SIGNATURE BLOCK ──
+    rep_name = settings.get("rep_name", "")
+    rep_title = settings.get("rep_title", "Gestionnaire de comptes clients")
+    phone = settings.get("phone", "")
+
     p = doc.add_paragraph()
     _set_paragraph_spacing(p, 0, 0, 1.15)
-    run = p.add_run(settings.get("rep_name", ""))
-    run.bold = True
-    run.font.color.rgb = NAVY
-    run.font.size = Pt(11)
+    if rep_name:
+        run = p.add_run(rep_name)
+        run.bold = True
+        run.font.size = Pt(11)
+    if phone:
+        run = p.add_run(f", Poste {phone}")
+        run.font.size = Pt(11)
 
-    p = doc.add_paragraph(f"Téléphone : {settings.get('phone', '')}")
-    _set_paragraph_spacing(p, 0, 0, 1.15)
-    p = doc.add_paragraph(f"Courriel : {settings.get('email', '')}")
-    _set_paragraph_spacing(p, 0, 0, 1.15)
-    p = doc.add_paragraph("Guard-X Protection Incendie")
-    _set_paragraph_spacing(p, 0, 0, 1.15)
+    if rep_title:
+        p = doc.add_paragraph(rep_title)
+        _set_paragraph_spacing(p, 0, 0, 1.15)
 
     # ── FOOTER with separator line ──
     p = doc.add_paragraph()

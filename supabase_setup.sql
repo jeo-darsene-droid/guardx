@@ -5,6 +5,7 @@
 CREATE TABLE IF NOT EXISTS config (
     id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
     rep_name TEXT DEFAULT '',
+    rep_title TEXT DEFAULT 'Gestionnaire de comptes clients',
     phone TEXT DEFAULT '',
     email TEXT DEFAULT '',
     default_mode TEXT DEFAULT 'postal',
