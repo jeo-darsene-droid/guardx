@@ -106,10 +106,6 @@ F_ADDR = dict(x=1095, y=2987, w=4410, h=1016, h_rule="exact")
 F_OBJET = dict(x=1095, y=4602, w=7650, h=345, h_rule="exact")
 # V/Réf line
 F_VREF = dict(x=1095, y=5117, w=5655, h=345, h_rule="exact")
-# Sender contact line 1
-F_SENDER1 = dict(x=1095, y=6232, w=7650, h=345, h_rule="exact")
-# Sender contact line 2
-F_SENDER2 = dict(x=1095, y=6832, w=5955, h=330, h_rule="exact")
 # Body text
 F_BODY = dict(x=1095, y=5700, w=9735, h=8300, h_rule="atLeast")
 # Date — top of page, between logo and address block
@@ -367,13 +363,15 @@ def _generate_depot(doc, prospect, settings):
     _set_spacing(p, 0, 6, 1.15)
 
     # Body para 2
-    p = doc.add_paragraph(
-        f"Je suis {rep_name}, représentant en protection incendie chez Guard-X, "
-        "situé à Anjou. Nous accompagnons les syndicats de copropriété de 8 à 24 "
-        "unités dans l'inspection et la certification de leurs équipements de sécurité."
-    )
+    p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     _set_spacing(p, 0, 6, 1.15)
+    run = p.add_run(f"Je suis {rep_name}, ")
+    _set_font(run, size=11)
+    run = p.add_run(rep_title)
+    _set_font(run, size=11)
+    run = p.add_run(" chez Guard-X, situé à Anjou. Nous accompagnons les syndicats de copropriété de 8 à 24 unités dans l'inspection et la certification de leurs équipements de sécurité.")
+    _set_font(run, size=11)
 
     # Services
     p = doc.add_paragraph()
@@ -387,12 +385,19 @@ def _generate_depot(doc, prospect, settings):
         p.paragraph_format.left_indent = Cm(0.5)
 
     # Engagement
-    p = doc.add_paragraph(
-        f"Nous offrons une estimation gratuite et sans engagement. "
-        f"N'hésitez pas à nous contacter au {rep_phone} ou par courriel au {rep_email}."
-    )
+    p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     _set_spacing(p, 4, 8, 1.15)
+    run = p.add_run("Nous offrons une estimation gratuite et sans engagement. N'hésitez pas à nous contacter au ")
+    _set_font(run, size=11)
+    run = p.add_run(rep_phone)
+    _set_font(run, size=11, bold=True)
+    run = p.add_run(" ou par courriel au ")
+    _set_font(run, size=11)
+    run = p.add_run(rep_email)
+    _set_font(run, size=11, bold=True)
+    run = p.add_run(".")
+    _set_font(run, size=11)
 
     # Closing
     p = doc.add_paragraph("Merci pour votre temps et votre attention.")
@@ -403,12 +408,17 @@ def _generate_depot(doc, prospect, settings):
 
     # Signature
     p = doc.add_paragraph()
-    _set_spacing(p, 0, 0, 1.15)
+    _set_spacing(p, 0, 2, 1.15)
     run = p.add_run(rep_name)
     _set_font(run, size=11, bold=True)
 
     p = doc.add_paragraph(rep_title)
+    _set_spacing(p, 0, 2, 1.15)
+    _set_font(p.runs[0], size=11)
+
+    p = doc.add_paragraph("Votre partenaire de sécurité local à Anjou")
     _set_spacing(p, 0, 0, 1.15)
+    _set_font(p.runs[0], size=11)
 
     # Footer
     p = doc.add_paragraph()

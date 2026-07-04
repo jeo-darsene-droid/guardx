@@ -127,7 +127,8 @@ async def save_prospects(body: dict):
     db.table("prospects").delete().gte("id", 0).execute()
     if prospects:
         # Strip client-side ids so Supabase auto-generates them
-        clean = [{k: v for k, v in p.items() if k not in ("id", "created_at", "updated_at")} for p in prospects]
+        now = datetime.now().isoformat()
+        clean = [{k: v for k, v in p.items() if k not in ("id", "created_at", "updated_at")} | {"updated_at": now} for p in prospects]
         db.table("prospects").insert(clean).execute()
     return {"status": "ok", "count": len(prospects)}
 
@@ -169,6 +170,7 @@ async def add_prospects(body: dict):
             "next_action": str(row.get("Prochaine_Action", "") or ""),
             "contacte": False,
             "date_contact": "",
+            "updated_at": datetime.now().isoformat(),
         })
         existing_keys.add(key)
 

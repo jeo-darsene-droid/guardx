@@ -7,7 +7,7 @@ import pandas as pd
 from fastapi import APIRouter, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 
-from utils.fuzzy_matcher import match_score
+from utils.fuzzy_matcher import find_best_match
 from db import get_db
 
 router = APIRouter()
@@ -47,13 +47,7 @@ async def check_duplicates(
 
     for _, row in pros_df.iterrows():
         addr = str(row.get(prospect_col, ""))
-        best_score = 0.0
-        best_match = None
-        for ca in client_addresses:
-            score = match_score(addr, ca)
-            if score > best_score:
-                best_score = score
-                best_match = ca
+        best_match, best_score = find_best_match(addr, client_addresses)
 
         row_dict = row.to_dict()
         row_dict["match_score"] = round(best_score, 1)

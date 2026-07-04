@@ -3,9 +3,9 @@ import io
 import pandas as pd
 from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import JSONResponse
-from rapidfuzz import fuzz
 
 from utils.address_normalizer import normalize_address
+from utils.fuzzy_matcher import match_score
 from db import get_db
 
 router = APIRouter()
@@ -119,13 +119,12 @@ async def check_against_clients(body: dict):
     results = []
     for i, row in enumerate(rows):
         raw = str(row.get(address_field, "") or row.get(address_field.lower(), ""))
-        addr = normalize_address(raw)
-        if not addr:
+        if not raw.strip():
             continue
         best = 0.0
         best_client = None
         for c in clients:
-            s = fuzz.token_sort_ratio(addr, c["adresse_normalisee"])
+            s = match_score(raw, c["adresse"])
             if s > best:
                 best = s
                 best_client = c
