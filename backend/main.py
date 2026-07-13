@@ -13,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from routes import letters, duplicates, properties, clients, report, req
 from db import get_db
 from utils.zone_mapper import assign_zone_and_rue, reload_zones
 
@@ -35,12 +34,15 @@ _assets_dir = os.path.join(BASE_DIR, "assets")
 if os.path.isdir(_assets_dir):
     app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
 
+# Register route modules (imports pandas/rapidfuzz — heavy but required for all API endpoints)
+from routes import letters, duplicates, properties, clients, report, req
 app.include_router(letters.router, prefix="/api", tags=["letters"])
 app.include_router(duplicates.router, prefix="/api", tags=["duplicates"])
 app.include_router(properties.router, prefix="/api", tags=["properties"])
 app.include_router(clients.router, prefix="/api", tags=["clients"])
 app.include_router(report.router, prefix="/api", tags=["report"])
 app.include_router(req.router, prefix="/api", tags=["req"])
+
 
 
 @app.get("/api/config")
