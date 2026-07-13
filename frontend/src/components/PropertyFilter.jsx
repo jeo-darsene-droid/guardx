@@ -1,8 +1,11 @@
 import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { Upload, FileSpreadsheet, Loader2, Download, Building2, Filter, Send, Search } from 'lucide-react'
+import { filterPropertiesLocally } from '../utils/propertyFilterLocal.js'
 
 const API = '/api'
+// Limite d'upload des fonctions serverless (Vercel ~4.5 Mo) — au-delà, filtrage côté navigateur
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 
 export default function PropertyFilter({ showToast }) {
   const [file, setFile] = useState(null)
@@ -28,13 +31,44 @@ export default function PropertyFilter({ showToast }) {
     multiple: false,
   })
 
+  const applyResults = (data) => {
+    setResults(data)
+    setProgress(100)
+    try {
+      sessionStorage.setItem('req_buildings', JSON.stringify(data.all_rows || []))
+    } catch { /* quota exceeded — résultats trop volumineux pour sessionStorage */ }
+    showToast(`${data.count} propriétés trouvées`)
+  }
+
   const handleRun = async () => {
     if (!file) {
       showToast('Veuillez téléverser le fichier CSV', 'error')
       return
     }
     setRunning(true)
-    setProgress(15)
+    setProgress(5)
+
+    // Gros fichier : filtrage dans le navigateur (aucun upload — contourne la limite serverless)
+    if (file.size > MAX_UPLOAD_BYTES) {
+      try {
+        const data = await filterPropertiesLocally(file, {
+          minUnits, maxUnits, searchTerm, yearMin, yearMax, condoOnly, utilFilter,
+        }, setProgress)
+        applyResults(data)
+        // Log best-effort dans le journal d'activité
+        fetch(`${API}/activity`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'properties_filtered', detail: `${data.count} propriétés trouvées`, detail_count: data.count }),
+        }).catch(() => {})
+      } catch (err) {
+        showToast(`Erreur lors du filtrage local: ${err.message}`, 'error')
+      } finally {
+        setRunning(false)
+        setTimeout(() => setProgress(0), 2000)
+      }
+      return
+    }
 
     const formData = new FormData()
     formData.append('file', file)
@@ -58,12 +92,7 @@ export default function PropertyFilter({ showToast }) {
         return
       }
       const data = await res.json()
-      setResults(data)
-      setProgress(100)
-      try {
-        sessionStorage.setItem('req_buildings', JSON.stringify(data.all_rows || []))
-      } catch { /* quota exceeded — résultats trop volumineux pour sessionStorage */ }
-      showToast(`${data.count} propriétés trouvées`)
+      applyResults(data)
     } catch (err) {
       showToast(`Erreur de connexion: ${err.message}`, 'error')
     } finally {
