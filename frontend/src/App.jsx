@@ -7,6 +7,8 @@ import DuplicateChecker from './components/DuplicateChecker.jsx'
 import PropertyFilter from './components/PropertyFilter.jsx'
 import ProspectTracker from './components/ProspectTracker.jsx'
 import ClientBase from './components/ClientBase.jsx'
+import ReqMatch from './components/ReqMatch.jsx'
+import MobileTerrain from './components/MobileTerrain.jsx'
 import Settings from './components/Settings.jsx'
 import { CheckCircle, XCircle, X } from 'lucide-react'
 
@@ -83,6 +85,8 @@ export default function App() {
               <Route path="/coproprietes" element={<PropertyFilter showToast={showToast} />} />
               <Route path="/prospects" element={<ProspectTracker showToast={showToast} />} />
               <Route path="/base-clients" element={<ClientBase showToast={showToast} />} />
+              <Route path="/croisement-req" element={<ReqMatch showToast={showToast} />} />
+              <Route path="/terrain" element={<MobileTerrain showToast={showToast} />} />
               <Route path="/parametres" element={<Settings config={config} setConfig={setConfig} showToast={showToast} />} />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>

@@ -1,0 +1,39 @@
+{
+  "ZONE 1 — Cœur industriel": [
+    "jarry est",
+    "bombardier",
+    "ray-lawson",
+    "ampere",
+    "edison",
+    "galilee",
+    "newton",
+    "colbert",
+    "pascal-gagnon",
+    "grenache"
+  ],
+  "ZONE 2 — Commercial / corporatif": [
+    "metropolitain est",
+    "louis-h-la fontaine",
+    "galeries-d'anjou",
+    "jean-talon est",
+    "saint-zotique est"
+  ],
+  "ZONE 3 — Logistique / manufacturier Est": [
+    "henri-bourassa est",
+    "langelier",
+    "de la seine",
+    "de l'yser",
+    "de la marne"
+  ],
+  "ZONE 4 — Résidentiel condos": [
+    "chaumont",
+    "joseph-renaud",
+    "wilfrid-pelletier",
+    "de l'anjou",
+    "des ormeaux",
+    "chateauneuf",
+    "goncourt",
+    "grosbois",
+    "grenoble"
+  ]
+}

@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { Upload, FileSpreadsheet, Mail, Download, Loader2, Table, Send } from 'lucide-react'
+import { Upload, FileSpreadsheet, Mail, Download, Loader2, Table, Send, Link2, AlertTriangle } from 'lucide-react'
 
 const API = '/api'
 
@@ -16,6 +16,57 @@ export default function LetterGenerator({ config, showToast }) {
   const [progress, setProgress] = useState(0)
   const [resultUrl, setResultUrl] = useState(null)
   const [clientWarnings, setClientWarnings] = useState(null)
+  const [fromReq, setFromReq] = useState(false)
+  const [fullRows, setFullRows] = useState(null)
+  const [showNoNameConfirm, setShowNoNameConfirm] = useState(false)
+
+  const rowsMissingName = (rows) => {
+    if (!rows) return []
+    return rows.filter(r => {
+      // Flux syndicat/locatif : lettres non nominatives, aucun nom attendu
+      const segment = String(r.Segment || r.segment || '').toLowerCase()
+      if (segment === 'syndicat de copropriété' || segment === 'locatif') return false
+      if (String(r.Nom_Syndicat || '').trim()) return false
+      const name = String(r.Nom_Gestionnaire || r.Contact || r.contact || '').trim()
+      return !name
+    })
+  }
+
+  const checkAgainstClients = useCallback(async (rows) => {
+    setClientWarnings(null)
+    try {
+      const checkRes = await fetch(`${API}/clients/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows, address_field: 'Adresse' }),
+      })
+      const check = await checkRes.json()
+      if (check.checked && check.flagged > 0) {
+        setClientWarnings(check)
+        showToast(`⚠️ ${check.flagged} adresse(s) sont peut-être déjà des clients Guard-X`, 'error')
+      }
+    } catch { /* base clients indisponible — on continue */ }
+  }, [showToast])
+
+  // Check for rows passed from Croisement REQ via sessionStorage
+  useEffect(() => {
+    const stored = sessionStorage.getItem('letter_rows')
+    if (stored) {
+      try {
+        const rows = JSON.parse(stored)
+        if (rows && rows.length > 0) {
+          const columns = Object.keys(rows[0])
+          setPreview({ columns, rows, total_rows: rows.length })
+          setFullRows(rows)
+          setFromReq(true)
+          sessionStorage.removeItem('letter_rows')
+          showToast(`${rows.length} lignes chargées depuis Croisement REQ`, 'success')
+          // Garde-fou : vérification contre la base clients aussi pour les données REQ
+          checkAgainstClients(rows)
+        }
+      } catch { /* ignore */ }
+    }
+  }, [showToast, checkAgainstClients])
 
   const onDrop = useCallback(async (acceptedFiles) => {
     const f = acceptedFiles[0]
@@ -37,23 +88,17 @@ export default function LetterGenerator({ config, showToast }) {
 
     // Garde-fou : vérification automatique de TOUTES les lignes contre la base clients
     setClientWarnings(null)
+    setFullRows(null)
     try {
       const fullData = new FormData()
       fullData.append('file', f)
       const fullRes = await fetch(`${API}/import-prospects`, { method: 'POST', body: fullData })
       const full = await fullRes.json()
-      const checkRes = await fetch(`${API}/clients/check`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: full.rows || [], address_field: 'Adresse' }),
-      })
-      const check = await checkRes.json()
-      if (check.checked && check.flagged > 0) {
-        setClientWarnings(check)
-        showToast(`⚠️ ${check.flagged} adresse(s) sont peut-être déjà des clients Guard-X`, 'error')
-      }
+      const rows = full.rows || []
+      setFullRows(rows)
+      await checkAgainstClients(rows)
     } catch { /* base clients indisponible — on continue */ }
-  }, [showToast])
+  }, [checkAgainstClients])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -65,20 +110,45 @@ export default function LetterGenerator({ config, showToast }) {
   })
 
   const handleGenerate = async () => {
-    if (!file) {
+    if (!file && !fromReq) {
       showToast('Veuillez d\'abord téléverser un fichier Excel', 'error')
       return
     }
+    // Vérifier si mode postal (nominatif) et noms manquants
+    if (mode === 'postal') {
+      const rows = fullRows?.length ? fullRows : preview?.rows
+      const missing = rowsMissingName(rows)
+      if (missing.length > 0) {
+        setShowNoNameConfirm(true)
+        return
+      }
+    }
+    doGenerate()
+  }
+
+  const doGenerate = async () => {
     setGenerating(true)
     setProgress(10)
 
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('settings', JSON.stringify({ mode, rep_name: repName, rep_title: repTitle, phone, email }))
-
     try {
       setProgress(40)
-      const res = await fetch(`${API}/generate-letters`, { method: 'POST', body: formData })
+      let res
+      if (fromReq && preview) {
+        // Send rows directly as JSON (no file upload needed)
+        res = await fetch(`${API}/generate-letters-json`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rows: preview.rows,
+            settings: { mode, rep_name: repName, rep_title: repTitle, phone, email },
+          }),
+        })
+      } else {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('settings', JSON.stringify({ mode, rep_name: repName, rep_title: repTitle, phone, email }))
+        res = await fetch(`${API}/generate-letters`, { method: 'POST', body: formData })
+      }
       setProgress(80)
       if (!res.ok) throw new Error('Échec de génération')
       const blob = await res.blob()
@@ -108,7 +178,8 @@ export default function LetterGenerator({ config, showToast }) {
   }
 
   const handleSendToProspects = async () => {
-    if (!preview?.rows?.length) {
+    const rows = fullRows?.length ? fullRows : preview?.rows
+    if (!rows?.length) {
       showToast('Veuillez d\'abord téléverser un fichier', 'error')
       return
     }
@@ -116,7 +187,7 @@ export default function LetterGenerator({ config, showToast }) {
       const res = await fetch(`${API}/prospects/add`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prospects: preview.rows }),
+        body: JSON.stringify({ prospects: rows }),
       })
       const data = await res.json()
       showToast(`${data.added} prospects ajoutés au suivi (${data.total} total)`)
@@ -132,23 +203,38 @@ export default function LetterGenerator({ config, showToast }) {
         <p className="text-gray-500 text-sm mt-1">Générez des lettres Word personnalisées pour vos prospects</p>
       </div>
 
-      {/* Upload zone */}
-      <div {...getRootProps()} className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${isDragActive ? 'border-accent bg-accent/5' : 'border-gray-300 hover:border-navy'}`}>
-        <input {...getInputProps()} />
-        {file ? (
-          <div className="flex flex-col items-center gap-2">
-            <FileSpreadsheet className="text-green-600" size={40} />
-            <p className="font-medium text-gray-700">{file.name}</p>
-            <p className="text-sm text-gray-400">{(file.size / 1024).toFixed(0)} Ko — Cliquez pour changer</p>
+      {/* Upload zone or REQ banner */}
+      {fromReq ? (
+        <div className="bg-navy/5 border-2 border-navy/20 rounded-xl p-6 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-lg bg-navy flex items-center justify-center">
+            <Link2 className="text-white" size={24} />
           </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <Upload className="text-gray-400" size={40} />
-            <p className="font-medium text-gray-600">Glissez votre fichier Excel ici</p>
-            <p className="text-sm text-gray-400">ou cliquez pour parcourir (.xlsx, .xls)</p>
+          <div className="flex-1">
+            <p className="font-semibold text-navy">Données du Croisement REQ</p>
+            <p className="text-sm text-gray-500">{preview?.total_rows || 0} lignes prêtes — nom du syndicat + adresse d'envoi REQ</p>
           </div>
-        )}
-      </div>
+          <button onClick={() => { setFromReq(false); setPreview(null) }} className="text-sm text-gray-400 hover:text-gray-600">
+            Changer de source
+          </button>
+        </div>
+      ) : (
+        <div {...getRootProps()} className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${isDragActive ? 'border-accent bg-accent/5' : 'border-gray-300 hover:border-navy'}`}>
+          <input {...getInputProps()} />
+          {file ? (
+            <div className="flex flex-col items-center gap-2">
+              <FileSpreadsheet className="text-green-600" size={40} />
+              <p className="font-medium text-gray-700">{file.name}</p>
+              <p className="text-sm text-gray-400">{(file.size / 1024).toFixed(0)} Ko — Cliquez pour changer</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2">
+              <Upload className="text-gray-400" size={40} />
+              <p className="font-medium text-gray-600">Glissez votre fichier Excel ici</p>
+              <p className="text-sm text-gray-400">ou cliquez pour parcourir (.xlsx, .xls)</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Preview */}
       {preview && (
@@ -168,13 +254,24 @@ export default function LetterGenerator({ config, showToast }) {
                 </tr>
               </thead>
               <tbody>
-                {preview.rows.map((row, i) => (
+                {preview.rows.slice(0, 5).map((row, i) => {
+                  const nameMissing = rowsMissingName([row]).length > 0
+                  return (
                   <tr key={i} className="border-t border-gray-50">
                     {preview.columns.map(col => (
-                      <td key={col} className="px-3 py-2 text-gray-700 whitespace-nowrap max-w-[200px] truncate">{String(row[col] ?? '')}</td>
+                      <td key={col} className="px-3 py-2 text-gray-700 whitespace-nowrap max-w-[200px] truncate">
+                        {String(row[col] ?? '')}
+                        {(col === 'Nom_Gestionnaire' || col === 'Contact') && nameMissing && (
+                          <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-orange-100 text-orange-700 whitespace-nowrap">
+                            <AlertTriangle size={10} />
+                            Nom manquant
+                          </span>
+                        )}
+                      </td>
                     ))}
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -246,7 +343,7 @@ export default function LetterGenerator({ config, showToast }) {
         <div className="flex gap-3">
           <button
             onClick={handleGenerate}
-            disabled={generating || !file}
+            disabled={generating || (!file && !fromReq)}
             className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-accent text-white rounded-lg font-medium hover:bg-accent-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {generating ? <Loader2 className="animate-spin" size={20} /> : <Mail size={20} />}
@@ -281,6 +378,37 @@ export default function LetterGenerator({ config, showToast }) {
           </div>
         )}
       </div>
+
+      {/* Dialogue de confirmation — nom manquant en mode nominatif */}
+      {showNoNameConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
+                <AlertTriangle className="text-orange-600" size={20} />
+              </div>
+              <h3 className="font-semibold text-navy text-lg">Nom de décideur manquant</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-5">
+              {rowsMissingName(fullRows?.length ? fullRows : preview?.rows).length} ligne(s) sans nom de décideur en mode postal (nominatif). Les lettres seront adressées sans nom spécifique.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowNoNameConfirm(false)}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => { setShowNoNameConfirm(false); doGenerate() }}
+                className="px-4 py-2 rounded-lg bg-accent text-white hover:bg-accent-light text-sm font-medium"
+              >
+                Envoyer quand même sans nom
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

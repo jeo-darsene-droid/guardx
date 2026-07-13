@@ -86,6 +86,42 @@ async def monthly_report(body: dict):
         for a in sorted(month_acts, key=lambda a: a.get("created_at", ""))
     ], columns=month_cols)
 
+    # ── Adresses prospectées du mois : preuve concrète du travail terrain ──
+    # Sources: prospects ajoutés dans le mois (table prospects, champ date)
+    # + adresses extraites des journaux « lettres générées » du mois.
+    addr_rows = []
+    for p in prospects:
+        p_date = str(p.get("date", "") or "")
+        if p_date.startswith(prefix) and (p.get("adresse") or p.get("entreprise")):
+            addr_rows.append({
+                "Date": p_date,
+                "Type": "Prospect ajouté",
+                "Syndicat / Entreprise": p.get("entreprise", ""),
+                "Adresse": p.get("adresse", ""),
+                "Ville / Secteur": p.get("ville", "") or p.get("secteur", ""),
+                "Statut": p.get("statut", ""),
+                "Contacté": "Oui" if p.get("contacte") else "Non",
+            })
+    for a in month_acts:
+        if a.get("action") != "letters_generated":
+            continue
+        detail = str(a.get("detail", "") or "")
+        if " — " in detail:
+            for addr in detail.split(" — ", 1)[1].split("; "):
+                addr = addr.strip()
+                if addr and not addr.startswith("(+"):
+                    addr_rows.append({
+                        "Date": (a.get("created_at", "") or "")[:10],
+                        "Type": "Lettre envoyée",
+                        "Syndicat / Entreprise": "",
+                        "Adresse": addr,
+                        "Ville / Secteur": "",
+                        "Statut": "",
+                        "Contacté": "",
+                    })
+    addr_cols = ["Date", "Type", "Syndicat / Entreprise", "Adresse", "Ville / Secteur", "Statut", "Contacté"]
+    addr_df = pd.DataFrame(sorted(addr_rows, key=lambda r: r["Date"]), columns=addr_cols)
+
     # ── Pipeline complet ──
     pipe_cols = ["Entreprise", "Contact", "Segment", "Statut", "Prochaine action",
                  "Adresse", "Secteur", "Téléphone", "Notes"]
@@ -108,6 +144,7 @@ async def monthly_report(body: dict):
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         kpi_df.to_excel(writer, sheet_name="KPI", index=False)
         month_df.to_excel(writer, sheet_name=f"{month_name} {year}", index=False)
+        addr_df.to_excel(writer, sheet_name="Adresses prospectées", index=False)
         pipe_df.to_excel(writer, sheet_name="Pipeline", index=False)
     buf.seek(0)
 

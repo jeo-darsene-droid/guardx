@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { Upload, FileSpreadsheet, Loader2, Download, Building2, Filter, Send } from 'lucide-react'
+import { Upload, FileSpreadsheet, Loader2, Download, Building2, Filter, Send, Search } from 'lucide-react'
 
 const API = '/api'
 
@@ -12,6 +12,7 @@ export default function PropertyFilter({ showToast }) {
   const [yearMin, setYearMin] = useState('')
   const [yearMax, setYearMax] = useState('')
   const [condoOnly, setCondoOnly] = useState(true)
+  const [utilFilter, setUtilFilter] = useState('')
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState(0)
   const [results, setResults] = useState(null)
@@ -43,6 +44,7 @@ export default function PropertyFilter({ showToast }) {
     formData.append('year_min', yearMin)
     formData.append('year_max', yearMax)
     formData.append('condo_only', condoOnly.toString())
+    formData.append('util_filter', utilFilter)
 
     try {
       setProgress(40)
@@ -52,6 +54,7 @@ export default function PropertyFilter({ showToast }) {
       const data = await res.json()
       setResults(data)
       setProgress(100)
+      sessionStorage.setItem('req_buildings', JSON.stringify(data.all_rows || []))
       showToast(`${data.count} propriétés trouvées`)
     } catch {
       showToast('Erreur lors du filtrage', 'error')
@@ -159,6 +162,11 @@ export default function PropertyFilter({ showToast }) {
             <span className="text-sm font-medium text-gray-600">Condominium uniquement</span>
           </label>
         </div>
+
+        <div>
+          <label className="text-sm font-medium text-gray-600 block mb-1">Code d'utilisation (optionnel)</label>
+          <input value={utilFilter} onChange={e => setUtilFilter(e.target.value)} placeholder="Ex: 1000,1100 — vide = tous" className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-navy" />
+        </div>
       </div>
 
       {/* Run */}
@@ -186,6 +194,10 @@ export default function PropertyFilter({ showToast }) {
               <span className="font-semibold text-navy">{results.count} propriétés trouvées</span>
             </div>
             <div className="flex gap-2">
+              <a href="/croisement-req" className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-light text-sm font-medium">
+                <Search size={16} />
+                Croisement REQ
+              </a>
               <button onClick={handleSendToProspects} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
                 <Send size={16} />
                 Envoyer aux prospects

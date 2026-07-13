@@ -108,9 +108,20 @@ def _filter_chunk(df, cols, min_units, max_units, search_term, year_min, year_ma
     return df
 
 
+def _clean_civic(raw):
+    """Normalize a civic number cell to a clean string ("97", not "97.0")."""
+    if pd.isna(raw) or str(raw).strip() in ("", "0", "0.0"):
+        return ""
+    try:
+        return str(int(float(raw)))
+    except (ValueError, TypeError):
+        return str(raw).strip()
+
+
 def _build_rows(df, cols, arrond_map, suffix_map):
     """Convert filtered chunk DataFrame to output dicts."""
     col_civic = cols["civic"]
+    col_civic_fin = cols["civic_fin"]
     col_addr = cols["addr"]
     col_rue = cols["rue"]
     col_muni = cols["muni"]
@@ -121,14 +132,13 @@ def _build_rows(df, cols, arrond_map, suffix_map):
 
     rows = []
     for _, row in df.iterrows():
-        civic = ""
-        if col_civic:
-            civic_raw = row.get(col_civic, "")
-            if pd.notna(civic_raw) and str(civic_raw).strip() not in ("", "0", "0.0"):
-                try:
-                    civic = str(int(float(civic_raw)))
-                except (ValueError, TypeError):
-                    civic = str(civic_raw).strip()
+        civic = _clean_civic(row.get(col_civic, "")) if col_civic else ""
+
+        # Civic range: "97-99" when CIVIQUE_FIN differs from CIVIQUE_DEBUT
+        if civic and col_civic_fin and col_civic_fin != col_civic:
+            civic_fin = _clean_civic(row.get(col_civic_fin, ""))
+            if civic_fin and civic_fin != civic:
+                civic = f"{civic}-{civic_fin}"
 
         addr_parts = []
         if civic:
@@ -139,6 +149,8 @@ def _build_rows(df, cols, arrond_map, suffix_map):
                 addr_parts.append(av)
         if col_rue:
             rv = str(row.get(col_rue, "")).strip()
+            # Strip borough suffix like "(MTL)" from the street name
+            rv = re.sub(r'\s*\([A-Z]{2,5}\)\s*$', '', rv).strip()
             if rv and rv != "0":
                 addr_parts.append(rv)
         address = " ".join([p for p in addr_parts if p])
@@ -207,14 +219,15 @@ async def filter_properties(
         col_util = _find_col(columns, ["CODE_UTILISATION", "CUBF"])
         col_year = _find_col(columns, ["ANNEE_CONSTRUCTION", "YEAR_BUILT", "ANNEE"])
         col_addr = _find_col(columns, ["ADRESSE", "CIVIC", "NUMERO_CIVIQUE"])
-        col_civic = _find_col(columns, ["CIVIQUE_DEBUT", "CIVIQUE_FIN", "NO_CIVIQUE",
+        col_civic = _find_col(columns, ["CIVIQUE_DEBUT", "NO_CIVIQUE",
                                         "NUMERO_CIVIQUE", "NO_CIVIC", "CIVIC_NUMBER", "CIVIQUE"])
+        col_civic_fin = _find_col(columns, ["CIVIQUE_FIN"])
         col_arrond = _find_col(columns, ["NO_ARROND_ILE_CUM", "ARRONDISSEMENT_CODE", "CODE_ARROND"])
 
         cols = {
             "units": col_units, "rue": col_rue, "muni": col_muni, "cat": col_cat,
             "util": col_util, "year": col_year, "addr": col_addr,
-            "civic": col_civic, "arrond": col_arrond,
+            "civic": col_civic, "civic_fin": col_civic_fin, "arrond": col_arrond,
         }
 
         arrond_map = {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FileText, Users, CopyCheck, Building2, Mail, Search, Target, ArrowRight, Activity, AlarmClock, Phone, Footprints, FileCheck, Trophy, Download } from 'lucide-react'
+import { FileText, Users, CopyCheck, Building2, Mail, Search, Target, ArrowRight, Activity, AlarmClock, Phone, Footprints, FileCheck, Trophy, Download, TrendingUp, Gauge } from 'lucide-react'
 
 const API = '/api'
 
@@ -18,7 +18,8 @@ export default function Dashboard({ showToast }) {
   const navigate = useNavigate()
   const [kpis, setKpis] = useState({ letters_today: 0, prospects: 0, duplicates_removed: 0, properties_targeted: 0 })
   const [activity, setActivity] = useState([])
-  const [followups, setFollowups] = useState({ due: [], overdue: [] })
+  const [followups, setFollowups] = useState({ due: [], overdue: [], pipeline_count: 0, machine_count: 0 })
+  const [cadence, setCadence] = useState(null)
   const [loading, setLoading] = useState(true)
   const now = new Date()
   const [reportMonth, setReportMonth] = useState(now.getMonth() + 1)
@@ -30,10 +31,12 @@ export default function Dashboard({ showToast }) {
       fetch(`${API}/kpis`).then(r => r.json()).catch(() => ({})),
       fetch(`${API}/activity`).then(r => r.json()).catch(() => []),
       fetch(`${API}/followups`).then(r => r.json()).catch(() => ({ due: [], overdue: [] })),
-    ]).then(([k, a, f]) => {
+      fetch(`${API}/cadence-anjou`).then(r => r.json()).catch(() => null),
+    ]).then(([k, a, f, c]) => {
       setKpis(k)
       setActivity(a)
       setFollowups(f)
+      setCadence(c)
       setLoading(false)
     })
   }, [])
@@ -97,12 +100,64 @@ export default function Dashboard({ showToast }) {
     return d.toLocaleString('fr-CA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
   }
 
+  const ProgressBar = ({ value, max, color = 'bg-accent' }) => {
+    const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0
+    return (
+      <div className="flex items-center gap-2">
+        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+          <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className="text-xs font-medium text-gray-600 shrink-0 tabular-nums">{value} / {max}</span>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-navy">Tableau de bord</h1>
         <p className="text-gray-500 text-sm mt-1">Vue d'ensemble de votre activité de prospection</p>
       </div>
+
+      {/* Cadence Anjou */}
+      {cadence && (
+        <div className="bg-gradient-to-br from-navy to-navy/90 rounded-xl shadow-sm p-5 text-white">
+          <div className="flex items-center gap-2 mb-4">
+            <Gauge size={20} className="text-accent" />
+            <h2 className="text-lg font-semibold">Cadence Anjou</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <p className="text-xs text-white/60 font-medium mb-1.5">Lettres cette semaine</p>
+              <ProgressBar value={cadence.lettres_semaine} max={cadence.lettres_semaine_obj} color="bg-accent" />
+            </div>
+            <div>
+              <p className="text-xs text-white/60 font-medium mb-1.5">Qualifiées aujourd'hui</p>
+              <ProgressBar value={cadence.qualifiees_jour} max={cadence.qualifiees_jour_obj} color="bg-green-400" />
+            </div>
+            <div>
+              <p className="text-xs text-white/60 font-medium mb-1.5">Qualifiées ce mois</p>
+              <ProgressBar value={cadence.qualifiees_mois} max={cadence.qualifiees_mois_obj} color="bg-blue-400" />
+            </div>
+            <div>
+              <p className="text-xs text-white/60 font-medium mb-1.5">Taux de retour</p>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-2xl font-bold text-accent tabular-nums">{cadence.taux_retour}%</span>
+                <span className="text-xs text-white/50">{cadence.retours_entrants} / {cadence.lettres_total} lettres</span>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-white/10">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs text-white/60 font-medium">Couverture Anjou</p>
+              <span className="text-xs font-medium text-white/80 tabular-nums">{cadence.couverture_traite} / {cadence.couverture_obj}</span>
+            </div>
+            <div className="h-2.5 bg-white/10 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-accent to-green-400 rounded-full transition-all" style={{ width: `${Math.min(100, (cadence.couverture_traite / cadence.couverture_obj) * 100)}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Panneau Aujourd'hui — suivis dus et en retard */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
@@ -112,6 +167,9 @@ export default function Dashboard({ showToast }) {
           {(followups.overdue.length + followups.due.length) > 0 && (
             <span className="ml-auto text-xs font-medium px-2.5 py-1 rounded-full bg-accent/10 text-accent">
               {followups.overdue.length + followups.due.length} suivi(s) à faire
+              {followups.pipeline_count != null && (
+                <span className="ml-1 text-gray-400">· {followups.pipeline_count} pipeline + {followups.machine_count || 0} machine</span>
+              )}
             </span>
           )}
         </div>
@@ -121,6 +179,7 @@ export default function Dashboard({ showToast }) {
           <p className="text-gray-400 text-sm py-4 text-center">✅ Aucun suivi dû aujourd'hui. Planifiez vos prochaines actions dans Mes prospects.</p>
         ) : (
           <div className="space-y-2">
+            {/* Pipeline follow-ups FIRST (overdue) */}
             {followups.overdue.map(p => (
               <button key={`o-${p.id}`} onClick={() => navigate('/prospects')} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-red-50 border border-red-100 hover:bg-red-100 text-left transition-colors">
                 <span className="text-xs font-bold text-red-600 shrink-0 w-24">⚠ {p.next_action}</span>
@@ -129,14 +188,18 @@ export default function Dashboard({ showToast }) {
                 {p.telephone && <span className="text-xs text-navy font-medium shrink-0">{p.telephone}</span>}
               </button>
             ))}
-            {followups.due.map(p => (
-              <button key={`d-${p.id}`} onClick={() => navigate('/prospects')} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 border border-blue-100 hover:bg-blue-100 text-left transition-colors">
-                <span className="text-xs font-bold text-blue-600 shrink-0 w-24">Aujourd'hui</span>
-                <span className="font-medium text-gray-700 flex-1 truncate">{p.entreprise || p.adresse || '—'}</span>
-                <span className="text-xs text-gray-500 hidden sm:block">{p.statut}</span>
-                {p.telephone && <span className="text-xs text-navy font-medium shrink-0">{p.telephone}</span>}
-              </button>
-            ))}
+            {/* Pipeline follow-ups (due today) */}
+            {followups.due.map(p => {
+              const isMachine = !!p._machine_type
+              return (
+                <button key={`d-${p.id}`} onClick={() => navigate('/prospects')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors border ${isMachine ? 'bg-purple-50 border-purple-100 hover:bg-purple-100' : 'bg-blue-50 border-blue-100 hover:bg-blue-100'}`}>
+                  <span className={`text-xs font-bold shrink-0 w-24 ${isMachine ? 'text-purple-600' : 'text-blue-600'}`}>{isMachine ? p._machine_type : 'Aujourd\'hui'}</span>
+                  <span className="font-medium text-gray-700 flex-1 truncate">{p.entreprise || p.adresse || '—'}</span>
+                  <span className="text-xs text-gray-500 hidden sm:block">{p.statut}</span>
+                  {p.telephone && <span className="text-xs text-navy font-medium shrink-0">{p.telephone}</span>}
+                </button>
+              )
+            })}
           </div>
         )}
       </div>
