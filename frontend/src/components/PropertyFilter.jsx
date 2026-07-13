@@ -60,7 +60,9 @@ export default function PropertyFilter({ showToast }) {
       const data = await res.json()
       setResults(data)
       setProgress(100)
-      sessionStorage.setItem('req_buildings', JSON.stringify(data.all_rows || []))
+      try {
+        sessionStorage.setItem('req_buildings', JSON.stringify(data.all_rows || []))
+      } catch { /* quota exceeded — résultats trop volumineux pour sessionStorage */ }
       showToast(`${data.count} propriétés trouvées`)
     } catch (err) {
       showToast(`Erreur de connexion: ${err.message}`, 'error')
