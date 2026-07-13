@@ -4,6 +4,9 @@ import { useDropzone } from 'react-dropzone'
 import { Upload, Database, Loader2, Search, Download, Send, AlertTriangle, CheckCircle, XCircle, HelpCircle, RefreshCw, Mail, MapPin, Check } from 'lucide-react'
 
 const API = '/api'
+// Limite d'upload des fonctions serverless (Vercel ~4.5 Mo) — les gros imports doivent se faire en local
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024
+const IS_LOCAL = ['localhost', '127.0.0.1'].includes(window.location.hostname)
 
 export default function ReqMatch({ showToast }) {
   const navigate = useNavigate()
@@ -42,20 +45,24 @@ export default function ReqMatch({ showToast }) {
   const onDrop = useCallback(async (acceptedFiles) => {
     const f = acceptedFiles[0]
     if (!f) return
+    if (f.size > MAX_UPLOAD_BYTES && !IS_LOCAL) {
+      showToast(`Fichier trop volumineux (${(f.size / 1024 / 1024).toFixed(0)} Mo) pour l'app en ligne (limite 4.5 Mo). Faites cet import depuis l'app locale (localhost) — les données seront ensuite visibles partout.`, 'error')
+      return
+    }
     setUploading(true)
     const formData = new FormData()
     formData.append('file', f)
     try {
       const res = await fetch(`${API}/req-import`, { method: 'POST', body: formData })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast(data.error || 'Erreur lors de l\'import REQ', 'error')
+        showToast(data.error || `Erreur ${res.status} lors de l'import REQ`, 'error')
       } else {
         showToast(`Base REQ mise à jour — ${data.count} syndicats trouvés sur ${data.total_scanned?.toLocaleString()} lignes`)
         loadInfo()
       }
-    } catch {
-      showToast('Erreur lors de l\'import REQ', 'error')
+    } catch (err) {
+      showToast(`Erreur de connexion lors de l'import REQ: ${err.message}`, 'error')
     } finally {
       setUploading(false)
     }
@@ -206,6 +213,10 @@ export default function ReqMatch({ showToast }) {
   const onDropPostal = useCallback(async (acceptedFiles) => {
     const f = acceptedFiles[0]
     if (!f) return
+    if (f.size > MAX_UPLOAD_BYTES && !IS_LOCAL) {
+      showToast(`Fichier trop volumineux (${(f.size / 1024 / 1024).toFixed(0)} Mo) pour l'app en ligne (limite 4.5 Mo). Faites cet import depuis l'app locale (localhost) — les données seront ensuite visibles partout.`, 'error')
+      return
+    }
     setPostalLoading(true)
     setPostalResults(null)
     setSelectedRows(new Set())
@@ -213,9 +224,9 @@ export default function ReqMatch({ showToast }) {
     formData.append('file', f)
     try {
       const res = await fetch(`${API}/req-import-by-postal`, { method: 'POST', body: formData })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast(data.error || 'Erreur lors du filtrage REQ', 'error')
+        showToast(data.error || `Erreur ${res.status} lors du filtrage REQ`, 'error')
       } else if (data.count === 0) {
         showToast(data.message || 'Aucun établissement trouvé pour Anjou')
       } else {
@@ -224,8 +235,8 @@ export default function ReqMatch({ showToast }) {
         setExpandedStreets(new Set(data.streets.map(s => s.rue)))
         showToast(`${data.count} entreprises trouvées à Anjou (${data.duplicates} doublons exclus) — ${data.streets.length} rues`)
       }
-    } catch {
-      showToast('Erreur lors du filtrage REQ', 'error')
+    } catch (err) {
+      showToast(`Erreur de connexion lors du filtrage REQ: ${err.message}`, 'error')
     } finally {
       setPostalLoading(false)
     }
