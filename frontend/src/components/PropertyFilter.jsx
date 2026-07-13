@@ -50,14 +50,20 @@ export default function PropertyFilter({ showToast }) {
       setProgress(40)
       const res = await fetch(`${API}/filter-properties`, { method: 'POST', body: formData })
       setProgress(80)
-      if (!res.ok) throw new Error('Échec')
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        const errMsg = errData.error || `Erreur ${res.status}`
+        showToast(`Erreur: ${errMsg}`, 'error')
+        console.error('filter-properties error:', errData)
+        return
+      }
       const data = await res.json()
       setResults(data)
       setProgress(100)
       sessionStorage.setItem('req_buildings', JSON.stringify(data.all_rows || []))
       showToast(`${data.count} propriétés trouvées`)
-    } catch {
-      showToast('Erreur lors du filtrage', 'error')
+    } catch (err) {
+      showToast(`Erreur de connexion: ${err.message}`, 'error')
     } finally {
       setRunning(false)
       setTimeout(() => setProgress(0), 2000)

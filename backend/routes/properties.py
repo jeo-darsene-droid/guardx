@@ -269,17 +269,54 @@ async def filter_properties(
         results = []
         total_rows_read = 0
 
+        # When filtering condominiums, each unit is a separate row with NOMBRE_LOGEMENT=1.
+        # We need to GROUP by address and SUM units to get the real building size.
+        # Strategy: relax the units filter during chunking (just filter condo + search term + year),
+        # then group by address and apply the units filter on the aggregated count.
+        is_condo = condo_only.lower() in ("true", "1", "yes")
+
         bio = io.BytesIO(content)
         for chunk in pd.read_csv(bio, encoding=enc, sep=sep, chunksize=CHUNK_SIZE):
             total_rows_read += len(chunk)
-            filtered = _filter_chunk(
-                chunk, cols, min_units, max_units, search_term,
-                year_min, year_max, condo_only, util_filter,
-                arrond_map, suffix_map,
-            )
+            if is_condo:
+                # Phase 1: filter everything EXCEPT units (condo, search, year, util)
+                filtered = _filter_chunk(
+                    chunk, cols, 1, 999999, search_term,
+                    year_min, year_max, condo_only, util_filter,
+                    arrond_map, suffix_map,
+                )
+            else:
+                filtered = _filter_chunk(
+                    chunk, cols, min_units, max_units, search_term,
+                    year_min, year_max, condo_only, util_filter,
+                    arrond_map, suffix_map,
+                )
             if len(filtered) > 0:
                 rows = _build_rows(filtered, cols, arrond_map, suffix_map)
                 results.extend(rows)
+
+        # Phase 2: group by address, sum units, then apply units filter
+        if is_condo and results:
+            # Group by Adresse (civic + street) and aggregate
+            grouped = {}
+            for r in results:
+                key = r["Adresse"]
+                if not key:
+                    continue
+                if key not in grouped:
+                    grouped[key] = {
+                        **r,
+                        "Nb_Unites": 0,
+                        "_count": 0,
+                    }
+                grouped[key]["Nb_Unites"] += r["Nb_Unites"] or 1
+                grouped[key]["_count"] += 1
+            # Apply units filter on aggregated counts
+            results = [
+                {k: v for k, v in r.items() if not k.startswith("_")}
+                for r in grouped.values()
+                if min_units <= r["Nb_Unites"] <= max_units
+            ]
 
         try:
             db = get_db()
@@ -293,7 +330,7 @@ async def filter_properties(
 
         return {
             "count": len(results),
-            "rows": results,
+            "rows": results[:500],
             "all_rows": results,
             "total_scanned": total_rows_read,
         }
